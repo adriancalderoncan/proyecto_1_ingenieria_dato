@@ -1,7 +1,9 @@
 import requests
 import json
+import pandas as pd
 
-url_1= "https://cima.aemps.es/cima/rest/buscarEnFichaTecnica?pagina="
+url_1 = "https://cima.aemps.es/cima/rest/buscarEnFichaTecnica?pagina="
+url_2 = "https://cima.aemps.es/cima/rest/medicamento?nregistro="
 
 payload = json.dumps([
   {
@@ -11,7 +13,6 @@ payload = json.dumps([
   }
 ])
 headers = {
-  'Cookie': 'JSESSIONID=SCfKUNr_04QO-eW2ONxhtMYjEpReBvxAt-jWgt5EP8TYj88jAn2l!-1454815942',
   'Content-Type': 'application/json'
 }
 
@@ -21,32 +22,88 @@ for i in range(1, 9):
     print("Obteniendo medicamentos de la página: ", i)
     response = requests.request("POST", url_1 + str(i), headers=headers, data=payload)
     pagina_medicamentos = json.loads(response.text)
-    medicamentos.extend(pagina_medicamentos['resultados'])
+    medicamentos.extend(pagina_medicamentos.get('resultados', []))
 
 nregistros = []
 for dat in medicamentos:
-    nregistro = dat['nregistro']
+    nregistro = dat.get('nregistro')
     nregistros.append(nregistro)
 
-print(len(nregistros))   # debe salir 1564
-
-
+print("Números de registro obtenidos: ", len(nregistros))
 
 infomedslis = []
-url_2 = "https://cima.aemps.es/cima/rest/medicamento?nregistro="
-#url = "https://cima.aemps.es/cima/rest/medicamento"
-
 
 for i in nregistros:
     url = url_2 + i
-    payload = {}
-    headers = {
-    'Cookie': 'JSESSIONID=SCfKUNr_04QO-eW2ONxhtMYjEpReBvxAt-jWgt5EP8TYj88jAn2l!-1454815942'
-    }
-
-    response = requests.request("GET", url, headers=headers, data=payload)
+    response = requests.request("GET", url, timeout=60)
     infomeds = json.loads(response.text)
     infomedslis.append(infomeds)
 
 
-print(infomedslis)
+filas = []
+
+for med in infomedslis:
+    # el codigo nacional se coge de la primera presentacion
+    presentaciones = med.get('presentaciones', [])
+    if len(presentaciones) > 0:
+        cn = presentaciones[0].get('cn')
+    else:
+        cn = None
+
+    forma = med.get('formaFarmaceuticaSimplificada')
+    if forma:
+        forma_farmaceutica_simplificada = forma.get('nombre')
+    else:
+        forma_farmaceutica_simplificada = None
+
+    estado = med.get('estado', {})
+    estado_aut = estado.get('aut')
+    estado_rev = estado.get('rev')
+
+    # en docs el tipo 1 es la ficha tecnica, urlHtml es la version html (url es el pdf)
+    url_ficha = None
+    for doc in med.get('docs', []):
+        if doc.get('tipo') == 1 and doc.get('urlHtml', '').endswith('.html'):
+            url_ficha = doc.get('urlHtml')
+
+    url_foto = None
+    for foto in med.get('fotos', []):
+        if 'material' in foto.get('tipo', '') and foto.get('url', '').endswith('.jpg'):
+            url_foto = foto.get('url')
+
+    vias = []
+    for via in med.get('viasAdministracion', []):
+        vias.append(via.get('nombre'))
+
+    fila = {
+        'nregistro': med.get('nregistro'),
+        'nombre': med.get('nombre'),
+        'pactivos': med.get('pactivos'),
+        'labtitular': med.get('labtitular'),
+        'labcomercializador': med.get('labcomercializador'),
+        'cn': cn,
+        'dosis': med.get('dosis'),
+        'forma_farmaceutica_simplificada': forma_farmaceutica_simplificada,
+        'estado_aut': estado_aut,
+        'estado_rev': estado_rev,
+        'comercializado': int(med.get('comerc', False)),
+        'requiere_receta': int(med.get('receta', False)),
+        'generico': int(med.get('generico', False)),
+        'afecta_conduccion': int(med.get('conduc', False)),
+        'triangulo_negro': int(med.get('triangulo', False)),
+        'medicamento_huerfano': int(med.get('huerfano', False)),
+        'biosimilar': int(med.get('biosimilar', False)),
+        'url_html_ficha_tecnica': url_ficha,
+        'url_foto_materiales': url_foto,
+        'num_registros_atc': len(med.get('atcs', [])),
+        'num_principios_activos': len(med.get('principiosActivos', [])),
+        'num_excipientes': len(med.get('excipientes', [])),
+        'vias_administracion': ", ".join(vias)
+    }
+    filas.append(fila)
+
+df = pd.DataFrame(filas)
+print(df.shape)
+
+df.to_excel("data/HU1_medicamentos_diabetes.xlsx", index=False)
+print("Dataset guardado")
