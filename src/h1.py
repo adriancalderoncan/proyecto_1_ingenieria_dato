@@ -2,8 +2,8 @@ import requests
 import json
 import pandas as pd
 
-url_1 = "https://cima.aemps.es/cima/rest/buscarEnFichaTecnica?pagina="
-url_2 = "https://cima.aemps.es/cima/rest/medicamento?nregistro="
+url_1 = "https://cima.aemps.es/cima/rest/buscarEnFichaTecnica?pagina="    #POST
+url_2 = "https://cima.aemps.es/cima/rest/medicamento?nregistro="          #GET
 
 payload = json.dumps([
   {
@@ -21,6 +21,7 @@ medicamentos = []
 for i in range(1, 9):
     print("Obteniendo medicamentos de la página: ", i)
     response = requests.request("POST", url_1 + str(i), headers=headers, data=payload)
+    #es lo mismo request.request("POST",url...) que request.post(url_1 +str(i),...)
     pagina_medicamentos = json.loads(response.text)
     medicamentos.extend(pagina_medicamentos.get('resultados', []))
 
@@ -35,10 +36,13 @@ infomedslis = []
 
 for i in nregistros:
     url = url_2 + i
-    response = requests.request("GET", url, timeout=60)
-    infomeds = json.loads(response.text)
-    infomedslis.append(infomeds)
-
+    try:
+      response = requests.request("GET", url, timeout=60)
+      infomeds = json.loads(response.text)
+      infomedslis.append(infomeds)
+    except Exception as e:
+        print(f"Error al obtener el medicamento {i}")
+#infomedslis es una lista plana donde cada elemento es el diccionario completo de un medicamento distinto
 
 filas = []
 
