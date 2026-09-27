@@ -1,45 +1,28 @@
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 
+url = "https://www.sanidad.gob.es/profesionales/nomenclator.do?metodo=nomenclatorExcel"     #es el link de decarga del excel directamente,en vez del del enunciado
+response = requests.get(url)
 
-url_nomenclator = "https://www.sanidad.gob.es/profesionales/nomenclator.do?metodo=nomenclatorExcel"
-response = requests.get(url_nomenclator, timeout=120)
+with open("data/nomenclator.xls","wb") as archivo:  #abre(en este caso como no existe,lo crea) un archivo en esa ruta."wb" es que es en modo "write" y "binary",es decir,vamos a meter en este archivo bytes tal cual,no texto,y no lo stoques ni interpretes
+    archivo.write(response.content)     #usamos response.content porque son bytes,antes hemos usado response.text porque era texto
 
-ruta_nomenclator = "data/nomenclator.xls"
-# creo un ficher nuevo en el directorio y le escribo el contenido del response.content
-with open(ruta_nomenclator, "wb") as fichero:
-    fichero.write(response.content)
+df_precios = pd.read_excel("data/nomenclator.xls")  
+print(df_precios.columns) #para ver el nombre de las columnas del excel
 
-print("Nomenclator descargado")
+df_hu2 = pd.read_excel("data/HU2_medicamentos_diabetes.xlsx")
+print(df_hu2.columns)   #lo mismo pero con el excel que hicimos en el hu2
 
-# el cn lo leemos como texto, si no pandas lo convierte en decimal (662260.0) y luego no cruza
-df = pd.read_excel("data/HU2_medicamentos_diabetes.xlsx", dtype={"cn": str})
+df_precios_columnas_añadir = df_precios[["Código Nacional", "Estado", "Precio de venta al público con IVA","Precio de referencia","Tratamiento de larga duración", "Especial control médico" ]]
+# IMPORTANTE: doble corchete = selecciono varias columnas a la vez (lista de nombres)del excel df_precios y me sigue devolviendo una tabla, no una sola columna
+df_precios_columnas_añadir["Código Nacional"] = df_precios_columnas_añadir["Código Nacional"].astype("float64")
+#tenemos que convertir la columna de Codigo Nacional del excel nuevo a float(son int),ya que la columna "cn" de nuestro excel del HU2 esta en float
 
-# el nomenclator es un .xls antiguo, necesita la libreria xlrd para poder leerse
-nomenclator = pd.read_excel(ruta_nomenclator, engine="xlrd")
-print("Filas del nomenclator: ", len(nomenclator))
+df_hu3 = df_hu2.merge(df_precios_columnas_añadir, left_on="cn", right_on="Código Nacional",how="left")
+#cojo mi tabla principal(df_hu2,es la que tiene todo hasta ahora) y le pego las columnas de la ptra tabla (df_precios_columnas_añadir).Con how=left nos quedamos con todas las filas del de la izq pase lo que pase(df_hu2)
 
-# de las 20 columnas que trae el fichero nos quedamos solo con las que pide el enunciado
-columnas = ["Código Nacional",
-            "Estado",
-            "Precio de venta al público con IVA",
-            "Precio de referencia",
-            "Tratamiento de larga duración",
-            "Especial control médico"]
-nomenclator = nomenclator[columnas]
+#print(df_hu3.shape)
+#print(df_hu3.columns)
 
-# en el nomenclator el codigo nacional es un numero y en nuestro excel es texto, hay que cambiarlo
-nomenclator["Código Nacional"] = nomenclator["Código Nacional"].astype(str)
-
-
-# hacemos el merge para juntar los datos
-df = df.merge(nomenclator, how="left", left_on="cn", right_on="Código Nacional")
-
-
-# Código Nacional es la misma columna que cn
-df = df.drop(columns=["Código Nacional"])
-
-print(df.shape)
-
-df.to_excel("data/HU3_medicamentos_diabetes.xlsx", index=False)
-print("Dataset del HU3 guardado")
+df_hu3.to_excel("data/HU3_medicamentos_diabetes.xlsx",index=False)
