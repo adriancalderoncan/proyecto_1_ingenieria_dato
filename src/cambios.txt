@@ -1,0 +1,15 @@
+CAMBIOS EN EL DATASET (H4) - Alberto - partimos de HU3 (1569 filas, 32 columnas)
+
+HECHO
+1. Quitadas 742 filas: medicamentos cuyo "cn" no coincide con ningún "Código Nacional" del nomenclátor
+   (por eso no tienen precio ni estado). Antes 1569 filas -> ahora 827.
+2. Quitada la columna "Precio de referencia": cuando existe es igual al precio de venta (686 de 686)
+   y nunca existe sola.
+
+
+POR DECIDIR / REVISAR
+- "dosis": valores sucios (ej. "75 mg clopidogrel", "15mg-850mg", espacios).
+- "vias_administracion": se podrían unir las combinaciones raras.
+- "Especial control médico" (solo vale "NO") y "requiere_receta" (siempre 1): columnas constantes.
+- "estado_aut" y "estado_rev": vienen en milisegundos, hay que pasarlas a fecha.
+- "palabras_seccion_4_4": 3 filas con texto en vez de número.
