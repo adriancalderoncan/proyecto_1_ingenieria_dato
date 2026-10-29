@@ -1,15 +1,136 @@
 CAMBIOS EN EL DATASET (H4) - Alberto - partimos de HU3 (1569 filas, 32 columnas)
+Notebook: src/pruebah4_alberto.ipynb
+Resultado actual: 827 filas, 28 columnas, 0 nulos -> data/HU4_medicamentos_diabetes_limpio.csv
 
+
+========================================================================================
 HECHO
+========================================================================================
+
+FILAS
 1. Quitadas 742 filas: medicamentos cuyo "cn" no coincide con ningún "Código Nacional" del nomenclátor
    (por eso no tienen precio ni estado). Antes 1569 filas -> ahora 827.
-2. Quitada la columna "Precio de referencia": cuando existe es igual al precio de venta (686 de 686)
-   y nunca existe sola.
+   Con esto desaparecen también el único "cn" nulo (PRESINEX) y los nulos del precio.
+   Comprobado: no hay ningún "nregistro" duplicado.
+
+NOMBRES DE COLUMNAS
+2. Renombradas las columnas del nomenclátor a formato con "_", sin espacios ni tildes:
+   "Código Nacional" -> codigo_nacional_nomenclator, "Estado" -> estado,
+   "Precio de venta al público con IVA" -> precio_pvp_iva,
+   "Tratamiento de larga duración" -> tratamiento_larga_duracion,
+   "Especial control médico" -> especial_control_medico.
+
+COLUMNAS ELIMINADAS
+3. "Precio de referencia": cuando existe es igual al precio de venta (686 de 686) y nunca existe sola.
+4. codigo_nacional_nomenclator: es idéntica a "cn" en las 827 filas (comprobado con .all() -> True).
+5. requiere_receta (siempre 1), triangulo_negro (siempre 0), medicamento_huerfano (siempre 0) y
+   especial_control_medico (siempre "NO"): tras quitar las 742 filas tienen un único valor, no aportan nada.
+6. url_html_ficha_tecnica: todas las filas tienen URL, así que un indicador 0/1 valdría siempre 1,
+   y la URL en sí solo actúa como identificador.
+
+NULOS
+7. estado_rev (88 % nulos) -> nueva columna tiene_revision (1 si tiene fecha de revisión, 0 si no).
+   Se borra estado_rev: no tiene sentido inventar fechas.
+8. url_foto_materiales (513 nulos) -> nueva columna tiene_foto_materiales (1 si hay foto, 0 si no).
+   Se borra la URL.
+9. palabras_seccion_4_4: 3 filas (VIPIDIA) tenían el texto "no tiene sección 4.4".
+   Se pasa la columna a número (pd.to_numeric con errors="coerce"), esas 3 filas quedan como nulo
+   y se rellenan con 0 (si no tienen sección 4.4, tienen 0 palabras en ella). Después se pasa a entero.
+
+TIPOS DE DATOS
+10. nregistro y cn pasados a texto: son identificadores, no cantidades. cn se pasa antes a entero
+    para quitar el ".0" del final.
+11. estado_aut pasado de milisegundos desde 1970 a fecha (pd.to_datetime con unit="ms").
+
+CATEGÓRICAS
+12. tratamiento_larga_duracion: SI/NO -> 1/0.
+13. forma_farmaceutica_simplificada agrupada en 4 categorías (había grupos de 1, 3 o 19 casos):
+    COMPRIMIDO (incluye liberación modificada y sublingual), CAPSULA, INYECTABLE, OTRA (nasal y solución oral).
+14. vias_administracion agrupada en 3 categorías: ORAL (oral y sublingual),
+    INYECTABLE (todas las combinaciones con subcutánea/intravenosa/intramuscular) y NASAL.
+
+DOSIS (celda 29)
+Objetivo: dejar todas las dosis como "número mg" (o "número mg/número mg" en combinaciones)
+y después quedarnos con el número. Antes había 167 formatos distintos; ahora 69, todos en mg.
+15. Corrección fila a fila (por nregistro) de 12 valores desconocidos o erróneos, sacando la dosis
+    del nombre oficial: ACTOS ("Desconocido"), ISCOVER ("Desconocido"), LANTUS ("Desconocida"),
+    SEGLUROMET / SITAGLIPTINA-METFORMINA / VILDAGLIPTINA-METFORMINA STADA ("- REVISAR")
+    y VICTOZA (ponía 60 mg; la ficha técnica dice 6 mg/ml).
+16. Minúsculas y eliminación de espacios dobles, espacios al principio/final y saltos de línea.
+17. Eliminados los nombres de principios activos y texto sobrante dentro de la dosis
+    ("75 mg clopidogrel" -> "75 mg", "30 mg de pioglitazona" -> "30 mg", "/comprimido"...).
+    El principio activo ya está en la columna pactivos.
+18. Corregidos casos concretos: erratas ("75 mh", "30 gm + 2 mg"), orden invertido
+    ("1000/50 mg/mg" -> "50 mg/1000 mg"), números sin unidad ("15" -> "15 mg"),
+    y microgramos pasados a mg (1 mg = 1000 microgramos).
+19. Espacio entre número y unidad ("15mg" -> "15 mg").
+20. Un único separador "/" para combinaciones (antes "+", "y", "-", " / ").
+21. Separador decimal: "1.000" -> "1000" (punto de miles) y coma decimal -> punto ("2,5" -> "2.5").
+22. Unidades de insulina unificadas a UI/ml ("U/ml", "unidades/ml", "ui/ml").
+23. Nueva columna dosis_por_ml (1 si la dosis es por ml: insulinas y líquidos; 0 si es por comprimido/dosis).
+24. Insulinas pasadas de UI/ml a mg/ml con la equivalencia de la sección 2 de cada ficha técnica
+    (ej. glargina 100 UI = 3.64 mg, detemir 100 UI = 14.2 mg). Para Humulina, cuya ficha no da los mg,
+    se usa la de la insulina humana (100 UI = 3.5 mg).
+25. Quitado el "/ml" para que todas las dosis acaben en " mg" (la columna dosis_por_ml guarda esa información).
+    Comprobación: 0 filas que no terminen en " mg".
+26. Nuevas columnas numéricas: dosis_numero (primer número) y dosis_numero_2 (segundo número en
+    combinaciones, 0 si no hay combinación).
+
+EXPORTACIÓN
+27. Guardado data/HU4_medicamentos_diabetes_limpio.csv (utf-8-sig, sin índice).
 
 
-POR DECIDIR / REVISAR
-- "dosis": valores sucios (ej. "75 mg clopidogrel", "15mg-850mg", espacios).
-- "vias_administracion": se podrían unir las combinaciones raras.
-- "Especial control médico" (solo vale "NO") y "requiere_receta" (siempre 1): columnas constantes.
-- "estado_aut" y "estado_rev": vienen en milisegundos, hay que pasarlas a fecha.
-- "palabras_seccion_4_4": 3 filas con texto en vez de número.
+========================================================================================
+PENDIENTE: TERMINAR DE ESTANDARIZAR LAS DOSIS
+========================================================================================
+
+Al comparar la dosis final con la que aparece en el nombre de cada medicamento quedan 5 filas mal:
+
+  nregistro    medicamento                 dosis actual   dosis correcta   motivo
+  6362003      BYETTA 10 MICROGRAMOS       0.25 mg        0.01 mg          0.25 mg es la concentración por ml, no la dosis
+  6362001      BYETTA 5 MICROGRAMOS        0.25 mg        0.005 mg         ídem; además los dos Byetta quedaban iguales
+  10621014     RISTABEN 100 MG             128.9 mg       100 mg           128.9 mg es el peso de la sal (fosfato), no de la sitagliptina
+  10621015     RISTABEN 100 MG             128.9 mg       100 mg           ídem
+  1161146005   GLYXAMBI 10 MG/5 MG         5 mg/10 mg     10 mg/5 mg       orden invertido (el otro GLYXAMBI está como 25 mg/5 mg)
+
+Código (pegar al final de la celda 29, después del PASO 12, o en una celda nueva justo debajo).
+Se recalculan dosis_numero y dosis_numero_2 porque dependen de la columna dosis:
+
+# PASO 13: últimas correcciones encontradas al comparar la dosis con el nombre del medicamento
+correcciones_finales = {
+    "6362003": "0.01 mg",        # BYETTA 10 MICROGRAMOS (ponía 0.25 mg, que es la concentración por ml)
+    "6362001": "0.005 mg",       # BYETTA 5 MICROGRAMOS (ponía 0.25 mg)
+    "10621014": "100 mg",        # RISTABEN 100 MG (ponía 128.9 mg, el peso de la sal fosfato)
+    "10621015": "100 mg",        # RISTABEN 100 MG (ponía 128.9 mg)
+    "1161146005": "10 mg/5 mg",  # GLYXAMBI 10 MG/5 MG (estaba al revés: 5 mg/10 mg)
+}
+for nregistro, dosis_correcta in correcciones_finales.items():
+    df_clean.loc[df_clean["nregistro"] == nregistro, "dosis"] = dosis_correcta
+
+# Volvemos a sacar los números porque la columna dosis ha cambiado
+df_clean["dosis_numero"] = df_clean["dosis"].str.split(" ").str[0].astype(float)
+segunda_parte = df_clean["dosis"].str.split("/").str[1].str.split(" ").str[0]
+df_clean["dosis_numero_2"] = pd.to_numeric(segunda_parte, errors="coerce").fillna(0)
+
+# Comprobación
+df_clean.loc[df_clean["nregistro"].isin(correcciones_finales.keys()), ["nombre", "dosis", "dosis_numero", "dosis_numero_2"]]
+
+Probado: las 5 filas quedan corregidas y sigue habiendo 0 filas que no terminen en " mg".
+
+
+========================================================================================
+OTROS PENDIENTES (fuera de dosis)
+========================================================================================
+- estado (ALTA / BAJA GENERAL / BAJA POR NO COMERCIALIZAR / SUSPENSION TEMPORAL GENERAL) sigue como texto.
+  Opción: estado_alta 0/1. Ojo: coincide casi siempre con "comercializado" (solo 8 filas distintas).
+- num_registros_atc: vale 3 en 825 filas y 2 en 2 filas, casi constante -> eliminar.
+- forma_farmaceutica_simplificada y vias_administracion siguen como texto y dicen casi lo mismo
+  (oral = comprimido/cápsula, inyectable = inyectable). Quedarse con una y pasarla a columnas 0/1
+  con pd.get_dummies para el K-Means de H5.
+- Outliers (método IQR): precio_pvp_iva (36), palabras_seccion_4_4 (62), numero_tablas (121),
+  indicador_riesgo_severo (4). Son valores reales (ej. Byetta, Trulicity, Rybelsus > 120 €): mantenerlos
+  y justificarlo; opcional añadir log del precio para H5.
+- estado_aut: crear antigüedad en años (2026 - año) para que sea numérica.
+- Celda 9 es markdown con código dentro: borrarla.
+- Celda 35: el comentario dice (827, 30) pero ahora salen (827, 28).
+- Gráficas del EDA y reporte final con conclusiones.
