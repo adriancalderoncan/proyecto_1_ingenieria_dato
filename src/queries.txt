@@ -1,0 +1,127 @@
+-- 1-Creamos la base de datos (solo si no existe) y entramos en ella.IF NOT EXISTS evita que de error si ya estaba creada
+CREATE DATABASE IF NOT EXISTS biodatapharma;
+USE biodatapharma;
+SHOW TABLES;
+
+-- 2-Comprobamos que los datos están bien cargados.COUNT(*) cuenta las filas de la tabla.Si no sale 827 que es lo que habia en el csv,hay algun problema
+SELECT COUNT(*) FROM medicamentos_diabetes;
+
+-- 3-Creamos una vista con los KPIs de la HU6. Empezamos por los más simples que son  una suma y una división entre columnas
+-- y después añadimos los que comparan cada medicamento con su grupo
+-- Una vista es una consulta guardada,es decir, no copia datos, los calcula cada vez que la consultamos.
+-- usamos CREATE OR REPLACE porque si la vista ya existe la sustituye, asi podemos ejecutarlo varias veces sin error.
+-- Cada vez que añadimos un KPI volvemos a ejecutar este bloque, con una columna más.
+
+CREATE OR REPLACE VIEW kpis_medicamentos AS
+SELECT
+    nregistro,
+    nombre,
+    num_principios_activos,
+    num_excipientes,
+    -- KPI 1:Total de componentes: suma de principios activos y excipientes
+    num_principios_activos + num_excipientes AS total_componentes,
+    palabras_seccion_4_4,
+    numero_tablas,
+    -- KPI 2: Densidad de la ficha tecnica: palabras de la seccion 4.4 entre numero de tablas.
+    -- Si numero_tablas es 0, MySQL no puede dividir y devuelve NULL (vacio).
+    palabras_seccion_4_4 / numero_tablas AS densidad_ficha_tecnica
+FROM medicamentos_diabetes;
+
+-- 4-Comprobamos lo que hemos hecho(la vista) mirando las 10 primeras filas: total_componentes debe ser la suma de num_principios_activos y num_excipientes.
+--  y densidad_ficha_tecnica debe ser palabras_seccion_4_4 entre numero_tablas (NULL si numero_tablas es 0).
+
+SELECT * FROM kpis_medicamentos LIMIT 10;
+
+-- 5-Añadimos el siguiente KPI(volvemos a crear la vista cada vez que añadamos un KPI con CREATE OR REPLACE, que sustituye a la anterior)
+
+CREATE OR REPLACE VIEW kpis_medicamentos AS
+SELECT
+    nregistro,
+    nombre,
+    forma_farmaceutica_simplificada,
+    precio_pvp_iva,
+    num_principios_activos,
+    num_excipientes,
+    -- KPI 1: Total de componentes: suma de principios activos y excipientes
+
+    num_principios_activos + num_excipientes AS total_componentes,
+    palabras_seccion_4_4,
+    numero_tablas,
+
+    -- KPI 2: Densidad de la ficha tecnica, palabras de la seccion 4.4 entre numero de tablas.
+    -- Si numero_tablas es 0, MySQL no puede dividir y devuelve NULL (vacio).
+
+    palabras_seccion_4_4 / numero_tablas AS densidad_ficha_tecnica,
+
+    -- KPI 3: Ranking de precios por grupo,numeramos los medicamentos del más caro al mas barato dentro de su forma farmacéutica
+    -- ROW_NUMBER() numera las filas 1,2,3... en ese orden, y vuelve a empezar en 1 en cada grupo.OVER( ) le dice a ROW_NUMBER sobre que filas tiene que contar. 
+    -- Dentro de los paréntesis indicamos los grupos (PARTITION BY) y el orden (ORDER BY)
+    -- PARTITION BY separa los medicamentos en grupos según su forma farmaceutica (cada grupo es como una tabla aparte)
+    -- ORDER BY precio_pvp_iva DESC ordena cada grupo del más caro al mas barato
+
+    ROW_NUMBER() OVER (
+        PARTITION BY forma_farmaceutica_simplificada
+        ORDER BY precio_pvp_iva DESC
+    ) AS ranking_precio_grupo
+FROM medicamentos_diabetes;
+
+-- 6- Comprobamos de nuevo lo que hemos hecho.
+SELECT * FROM kpis_medicamentos LIMIT 10;
+
+-- 7-Añadimos los dos últimos KPIs (dos columnas mas). Volvemos a crear la vista con CREATE OR REPLACE, que sustituye a la anterior.
+
+CREATE OR REPLACE VIEW kpis_medicamentos AS
+SELECT
+    nregistro,
+    nombre,
+    forma_farmaceutica_simplificada,
+    precio_pvp_iva,
+    num_principios_activos,
+    num_excipientes,
+
+    -- KPI 1: Total de componentes: suma de principios activos y excipientes
+
+    num_principios_activos + num_excipientes AS total_componentes,
+    palabras_seccion_4_4,
+    numero_tablas,
+
+    -- KPI 2: Densidad de la ficha tecnica, palabras de la seccion 4.4 entre numero de tablas.
+    -- Si numero_tablas es 0, MySQL no puede dividir y devuelve NULL (vacio).
+
+    palabras_seccion_4_4 / numero_tablas AS densidad_ficha_tecnica,
+
+    -- KPI 3: Ranking de precios por grupo,numeramos los medicamentos del más caro al mas barato dentro de su forma farmacéutica
+    -- ROW_NUMBER() numera las filas 1,2,3... en ese orden, y vuelve a empezar en 1 en cada grupo.OVER( ) le dice a ROW_NUMBER sobre que filas tiene que contar.
+    -- Dentro de los paréntesis indicamos los grupos (PARTITION BY) y el orden (ORDER BY)
+    -- PARTITION BY separa los medicamentos en grupos según su forma farmaceutica (cada grupo es como una tabla aparte)
+    -- ORDER BY precio_pvp_iva DESC ordena cada grupo del más caro al mas barato
+
+    ROW_NUMBER() OVER (
+        PARTITION BY forma_farmaceutica_simplificada
+        ORDER BY precio_pvp_iva DESC
+    ) AS ranking_precio_grupo,
+
+    -- KPI 4: Con este calculamos la diferencia de precio con el mínimo del grupo.Es decir,cuánto más caro es cada medicamento que el más barato de su grupo.
+    -- Lo calcularemos haciendo precio − precio del más barato de su grupo
+    -- MIN(precio_pvp_iva) OVER (PARTITION BY ...) es el precio más barato de su grupo. Es el mismo OVER de antes,pero en vez de numerar calcula el mínimo de cada grupo.
+    -- con ROUND(...,2) redondeamos a 2 decimales 
+
+    ROUND(precio_pvp_iva - MIN(precio_pvp_iva) OVER (PARTITION BY forma_farmaceutica_simplificada), 2) AS diferencia_precio_minimo_grupo,
+
+    -- KPI 5: calculamos cuánto se aleja el precio de cada medicamento de la media de su grupo, en porcentaje.Lo calculamos haciendo
+    -- (precio − media del grupo) / media del grupo × 100.
+    -- AVG(precio_pvp_iva) OVER (PARTITION BY ...) es la media de precios de su grupo. Positivo = más caro que la media,negativo = más barato.
+    
+    ROUND(
+        (precio_pvp_iva - AVG(precio_pvp_iva) OVER (PARTITION BY forma_farmaceutica_simplificada))
+        / AVG(precio_pvp_iva) OVER (PARTITION BY forma_farmaceutica_simplificada) * 100,
+        2
+    ) AS desviacion_precio_grupo
+FROM medicamentos_diabetes;
+
+-- 8-Comprobamos los KPIs 4 y 5 mirando los 10 medicamentos más baratos de cada forma farmacéutica
+
+SELECT nombre, forma_farmaceutica_simplificada, precio_pvp_iva, diferencia_precio_minimo_grupo, desviacion_precio_grupo
+FROM kpis_medicamentos
+ORDER BY forma_farmaceutica_simplificada, precio_pvp_iva
+LIMIT 10;

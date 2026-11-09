@@ -8,3 +8,4 @@ openpyxl
 xlrd
 ipykernel
 lxml
+mysql-connector-python
